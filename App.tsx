@@ -1,7 +1,7 @@
 import React, { useState, useCallback, FormEvent, useEffect, useRef } from 'react';
 import { generateOutline, generateArticleSection } from './services/geminiService';
-import { getSavedOutlines, saveOutlines } from './services/storageService';
-import { OutlineData, OutlineSection, SavedOutline } from './types';
+import { getSavedOutlines, saveOutlines, getSavedArticles, saveArticles } from './services/storageService';
+import { OutlineData, OutlineSection, SavedOutline, SavedArticle, ArticleContentPart } from './types';
 
 const SparklesIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
@@ -130,22 +130,44 @@ const MarkdownOutput: React.FC<{ markdown: string }> = ({ markdown }) => {
   );
 };
 
-const ArticleDisplay: React.FC<{
+const ArticleEditor: React.FC<{
   outline: OutlineData;
   article: Map<string, string>;
-}> = ({ outline, article }) => {
+  onContentChange: (sectionTitle: string, newContent: string) => void;
+  onSave: () => void;
+  onGenerateMarkdown: () => void;
+  editingArticleId: string | null;
+}> = ({ outline, article, onContentChange, onSave, onGenerateMarkdown, editingArticleId }) => {
   return (
-    <div className="bg-slate-800/50 rounded-xl shadow-lg w-full p-6 md:p-8">
-      <h2 className="text-3xl font-bold text-sky-400 mb-6 border-b-2 border-slate-700 pb-4">{outline.title}</h2>
-      <div className="prose prose-invert prose-lg max-w-none">
-        {outline.outline.map((section, index) => (
-          <div key={index} className="mb-8">
-            <h3 className="text-2xl font-semibold text-slate-100">{section.section}</h3>
-            <div className="text-slate-300 whitespace-pre-wrap">
-              {article.get(section.section) || <span className="text-slate-500 italic">執筆中...</span>}
+    <div className="bg-slate-800/50 rounded-xl shadow-lg w-full">
+      <div className="p-6 md:p-8">
+        <h2 className="text-3xl font-bold text-sky-400 mb-6 border-b-2 border-slate-700 pb-4">{outline.title}</h2>
+        <div className="space-y-8">
+          {outline.outline.map((section, index) => (
+            <div key={index}>
+              <h3 className="text-2xl font-semibold text-slate-100 mb-3">{section.section}</h3>
+              <textarea
+                value={article.get(section.section) || ''}
+                onChange={(e) => onContentChange(section.section, e.target.value)}
+                className="w-full p-2 bg-slate-700 border border-slate-600 rounded-md text-slate-300 focus:outline-none focus:ring-1 focus:ring-sky-500 min-h-[150px] text-base"
+              />
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
+      </div>
+      <div className="bg-slate-900/50 p-4 rounded-b-xl flex justify-end items-center gap-4">
+         <button
+          onClick={onGenerateMarkdown}
+          className="flex items-center justify-center bg-blue-600 text-white font-bold py-2 px-6 rounded-full hover:bg-blue-700 transition-colors"
+        >
+          マークダウン出力
+        </button>
+        <button
+          onClick={onSave}
+          className="flex items-center justify-center bg-green-600 text-white font-bold py-2 px-6 rounded-full hover:bg-green-700 transition-colors"
+        >
+          {editingArticleId ? '記事を更新' : '記事を保存'}
+        </button>
       </div>
     </div>
   );
@@ -165,9 +187,12 @@ const App: React.FC = () => {
   const [isGeneratingArticle, setIsGeneratingArticle] = useState<boolean>(false);
   const [currentGeneratingSection, setCurrentGeneratingSection] = useState<string>('');
   const [generatedArticle, setGeneratedArticle] = useState<Map<string, string>>(new Map());
+  const [savedArticles, setSavedArticles] = useState<SavedArticle[]>([]);
+  const [editingArticleId, setEditingArticleId] = useState<string | null>(null);
 
   useEffect(() => {
     setSavedOutlines(getSavedOutlines());
+    setSavedArticles(getSavedArticles());
   }, []);
 
   const handleSubmit = useCallback(async (event: FormEvent<HTMLFormElement>) => {
@@ -289,6 +314,31 @@ const App: React.FC = () => {
     setMarkdownOutput(md);
   };
 
+  const handleGenerateArticleMarkdown = () => {
+    if (!outline || generatedArticle.size === 0) return;
+    const md = generateArticleMarkdown(outline, generatedArticle);
+    setMarkdownOutput(md);
+    setGeneratedArticle(new Map()); // Clear the editor view
+    setOutline(null);
+    setEditingArticleId(null);
+  };
+
+  const generateArticleMarkdown = (
+    outline: OutlineData,
+    article: Map<string, string>
+  ): string => {
+    let md = `# ${outline.title}\n\n`;
+    outline.outline.forEach(item => {
+      md += `## ${item.section}\n\n`;
+      md += (article.get(item.section) || '') + '\n\n';
+    });
+    return md;
+  };
+
+  const handleArticleContentChange = (sectionTitle: string, newContent: string) => {
+    setGeneratedArticle(prev => new Map(prev).set(sectionTitle, newContent));
+  };
+
   const handleGenerateArticle = async () => {
     if (!outline) return;
 
@@ -316,6 +366,64 @@ const App: React.FC = () => {
     } finally {
       setIsGeneratingArticle(false);
       setCurrentGeneratingSection('');
+    }
+  };
+
+  const handleSaveOrUpdateArticle = () => {
+    if (!outline || generatedArticle.size === 0) return;
+
+    const content: ArticleContentPart[] = Array.from(generatedArticle.entries()).map(
+      ([section, content]) => ({ section, content })
+    );
+
+    let updatedArticles;
+    if (editingArticleId) {
+      // Update
+      updatedArticles = savedArticles.map(a =>
+        a.id === editingArticleId
+          ? { ...a, outline: outline, content: content }
+          : a
+      );
+    } else {
+      // Save new
+      const newArticle: SavedArticle = {
+        id: Date.now().toString(),
+        createdAt: Date.now(),
+        outline: outline,
+        content: content,
+      };
+      updatedArticles = [newArticle, ...savedArticles];
+    }
+
+    setSavedArticles(updatedArticles);
+    saveArticles(updatedArticles);
+
+    // Reset state
+    setEditingArticleId(null);
+    setGeneratedArticle(new Map());
+    setOutline(null);
+    setTopic('');
+  };
+
+  const handleEditArticle = (id: string) => {
+    const articleToEdit = savedArticles.find(a => a.id === id);
+    if (articleToEdit) {
+      setOutline(articleToEdit.outline);
+      const articleMap = new Map(
+        articleToEdit.content.map(part => [part.section, part.content])
+      );
+      setGeneratedArticle(articleMap);
+      setEditingArticleId(articleToEdit.id);
+      setEditingId(null); // Clear outline editing state
+      setMarkdownOutput('');
+    }
+  };
+
+  const handleDeleteArticle = (id: string) => {
+    if (window.confirm('本当にこの記事を削除しますか？')) {
+      const updatedArticles = savedArticles.filter(a => a.id !== id);
+      setSavedArticles(updatedArticles);
+      saveArticles(updatedArticles);
     }
   };
 
@@ -446,13 +554,47 @@ const App: React.FC = () => {
               </div>
             </section>
           )}
+
+          {savedArticles.length > 0 && !generatedArticle.size && (
+            <section className="w-full mt-12">
+              <h2 className="text-2xl font-bold text-slate-300 mb-6 text-center">保存済み記事</h2>
+              <div className="space-y-4">
+                {savedArticles.map((saved) => (
+                  <div key={saved.id} className="bg-slate-800/50 rounded-lg p-4 flex justify-between items-center transition-all hover:bg-slate-800">
+                    <span className="text-slate-200 font-medium">{saved.outline.title}</span>
+                    <div className="flex items-center gap-4">
+                      <button
+                        onClick={() => handleEditArticle(saved.id)}
+                        className="text-sky-400 hover:text-sky-300 font-semibold"
+                      >
+                        編集
+                      </button>
+                      <button
+                        onClick={() => handleDeleteArticle(saved.id)}
+                        className="text-red-400 hover:text-red-300 font-semibold"
+                      >
+                        削除
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
             </div>
 
             {/* Right Column (Markdown Output) */}
             <div className="flex-1 md:w-2/5">
               <div className="sticky top-6">
                 {generatedArticle.size > 0 && outline ? (
-                  <ArticleDisplay outline={outline} article={generatedArticle} />
+                  <ArticleEditor
+                    outline={outline}
+                    article={generatedArticle}
+                    onContentChange={handleArticleContentChange}
+                    onSave={handleSaveOrUpdateArticle}
+                    onGenerateMarkdown={handleGenerateArticleMarkdown}
+                    editingArticleId={editingArticleId}
+                  />
                 ) : markdownOutput ? (
                   <MarkdownOutput markdown={markdownOutput} />
                 ) : (
