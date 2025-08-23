@@ -1,6 +1,7 @@
 import React, { useState, useCallback, FormEvent, useEffect, useRef } from 'react';
 import { generateOutline } from './services/geminiService';
-import { OutlineData, OutlineSection } from './types';
+import { getSavedOutlines, saveOutlines } from './services/storageService';
+import { OutlineData, OutlineSection, SavedOutline } from './types';
 
 const SparklesIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
@@ -34,6 +35,73 @@ const OutlineDisplay: React.FC<{ data: OutlineData }> = ({ data }) => (
   </div>
 );
 
+const OutlineEditor: React.FC<{
+  data: OutlineData;
+  setData: React.Dispatch<React.SetStateAction<OutlineData | null>>;
+}> = ({ data, setData }) => {
+
+  const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setData(prev => prev ? { ...prev, title: e.target.value } : null);
+  };
+
+  const handleSectionChange = (index: number, value: string) => {
+    setData(prev => {
+      if (!prev) return null;
+      const newOutline = [...prev.outline];
+      newOutline[index] = { ...newOutline[index], section: value };
+      return { ...prev, outline: newOutline };
+    });
+  };
+
+  const handleSubsectionsChange = (index: number, value: string) => {
+    setData(prev => {
+      if (!prev) return null;
+      const newOutline = [...prev.outline];
+      newOutline[index] = { ...newOutline[index], subsections: value.split('\n') };
+      return { ...prev, outline: newOutline };
+    });
+  };
+
+  return (
+    <div className="bg-slate-800 rounded-xl shadow-lg p-6 md:p-8 mt-8 w-full animate-fade-in space-y-6">
+      <div>
+        <label htmlFor="main-title" className="block text-sm font-medium text-sky-400 mb-1">タイトル</label>
+        <input
+          id="main-title"
+          type="text"
+          value={data.title}
+          onChange={handleTitleChange}
+          className="w-full p-2 bg-slate-700 border border-slate-600 rounded-md text-2xl font-bold text-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-500"
+        />
+      </div>
+      {data.outline.map((item, index) => (
+        <div key={index} className="pl-4 border-l-4 border-slate-600 space-y-3">
+          <div>
+            <label htmlFor={`section-title-${index}`} className="block text-sm font-medium text-slate-100 mb-1">セクション</label>
+            <input
+              id={`section-title-${index}`}
+              type="text"
+              value={item.section}
+              onChange={(e) => handleSectionChange(index, e.target.value)}
+              className="w-full p-2 bg-slate-700 border border-slate-600 rounded-md text-xl font-semibold text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
+            />
+          </div>
+          <div>
+            <label htmlFor={`subsections-${index}`} className="block text-sm font-medium text-slate-300 mb-1">サブセクション（改行で区切る）</label>
+            <textarea
+              id={`subsections-${index}`}
+              value={item.subsections.join('\n')}
+              onChange={(e) => handleSubsectionsChange(index, e.target.value)}
+              rows={item.subsections.length + 1}
+              className="w-full p-2 bg-slate-700 border border-slate-600 rounded-md text-slate-300 focus:outline-none focus:ring-1 focus:ring-sky-500"
+            />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+};
+
 
 const App: React.FC = () => {
   const [topic, setTopic] = useState<string>('');
@@ -42,11 +110,18 @@ const App: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [loadingMessage, setLoadingMessage] = useState<string>('');
   const intervalRef = useRef<number | null>(null);
+  const [savedOutlines, setSavedOutlines] = useState<SavedOutline[]>([]);
+  const [editingId, setEditingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setSavedOutlines(getSavedOutlines());
+  }, []);
 
   const handleSubmit = useCallback(async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!topic.trim() || isLoading) return;
 
+    setEditingId(null);
     setIsLoading(true);
     setError(null);
     setOutline(null);
@@ -92,6 +167,55 @@ const App: React.FC = () => {
       }
     };
   }, []);
+
+  const handleSaveOrUpdate = () => {
+    if (!outline) return;
+
+    let updatedOutlines;
+    if (editingId) {
+      // Update existing
+      updatedOutlines = savedOutlines.map(o =>
+        o.id === editingId ? { ...outline, id: editingId, createdAt: o.createdAt } : o
+      );
+    } else {
+      // Save new
+      const newSavedOutline: SavedOutline = {
+        ...outline,
+        id: Date.now().toString(),
+        createdAt: Date.now(),
+      };
+      updatedOutlines = [newSavedOutline, ...savedOutlines];
+    }
+
+    setSavedOutlines(updatedOutlines);
+    saveOutlines(updatedOutlines);
+    setEditingId(null);
+    setOutline(null);
+    setTopic('');
+  };
+
+  const handleEdit = (id: string) => {
+    const outlineToEdit = savedOutlines.find(o => o.id === id);
+    if (outlineToEdit) {
+      setOutline(outlineToEdit);
+      setTopic(outlineToEdit.title); // Or some other relevant topic source
+      setEditingId(id);
+    }
+  };
+
+  const handleDelete = (id: string) => {
+    if (window.confirm('本当にこの構成案を削除しますか？')) {
+      const updatedOutlines = savedOutlines.filter(o => o.id !== id);
+      setSavedOutlines(updatedOutlines);
+      saveOutlines(updatedOutlines);
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditingId(null);
+    setOutline(null);
+    setTopic('');
+  };
 
   return (
     <div className="min-h-screen bg-slate-900 text-white flex flex-col items-center p-4 sm:p-6 font-sans">
@@ -142,13 +266,60 @@ const App: React.FC = () => {
                 <p><strong>エラー:</strong> {error}</p>
               </div>
             )}
-            {outline && <OutlineDisplay data={outline} />}
+            {outline && (
+              <>
+                <OutlineEditor data={outline} setData={setOutline} />
+                <div className="flex items-center justify-end gap-4 mt-6">
+                  {editingId && (
+                     <button
+                        onClick={handleCancelEdit}
+                        className="text-slate-400 hover:text-white transition-colors"
+                      >
+                        キャンセル
+                      </button>
+                  )}
+                  <button
+                    onClick={handleSaveOrUpdate}
+                    className="flex items-center justify-center bg-green-600 text-white font-bold py-2 px-6 rounded-full hover:bg-green-700 transition-colors"
+                  >
+                    {editingId ? '更新を保存' : 'リストに保存'}
+                  </button>
+                </div>
+              </>
+            )}
             {!isLoading && !error && !outline && (
                 <div className="text-center text-slate-500 mt-16 p-6 border-2 border-dashed border-slate-700 rounded-xl">
                     <p>ここに生成された構成案が表示されます。</p>
                 </div>
             )}
           </div>
+
+          {savedOutlines.length > 0 && !editingId && (
+            <section className="w-full mt-16">
+              <h2 className="text-2xl font-bold text-slate-300 mb-6 text-center">保存済み構成案</h2>
+              <div className="space-y-4">
+                {savedOutlines.map((saved) => (
+                  <div key={saved.id} className="bg-slate-800/50 rounded-lg p-4 flex justify-between items-center transition-all hover:bg-slate-800">
+                    <span className="text-slate-200 font-medium">{saved.title}</span>
+                    <div className="flex items-center gap-4">
+                      <button
+                        onClick={() => handleEdit(saved.id)}
+                        className="text-sky-400 hover:text-sky-300 font-semibold"
+                      >
+                        編集
+                      </button>
+                      <button
+                        onClick={() => handleDelete(saved.id)}
+                        className="text-red-400 hover:text-red-300 font-semibold"
+                      >
+                        削除
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
         </main>
         
         <footer className="text-center mt-12 mb-6">
