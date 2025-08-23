@@ -1,0 +1,5 @@
+{
+  "name": "AI Content Outline Generator",
+  "description": "An application that generates a content outline from a title or keyword using the Gemini API. It helps users structure their articles, blog posts, or reports efficiently.",
+  "requestFramePermissions": []
+}
