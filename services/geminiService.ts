@@ -70,3 +70,42 @@ ${jsonSchemaString}
     throw new Error("構成案の生成中に不明なエラーが発生しました。");
   }
 }
+
+export async function generateArticleSection(
+  articleTitle: string,
+  sectionTitle: string,
+  subsections: string[]
+): Promise<string> {
+  const prompt = `
+あなたはプロのWebコンテンツライターです。
+以下の情報に基づき、ブログ記事の一部分となる、自然で読みやすく、魅力的な本文を執筆してください。
+
+記事全体のタイトル: "${articleTitle}"
+このセクションのタイトル: "${sectionTitle}"
+このセクションで含めるべき要点:
+- ${subsections.join('\n- ')}
+
+執筆のルール:
+- セクションタイトル（「${sectionTitle}」）自体は本文に含めないでください。
+- 箇条書きやマークダウンは、必要に応じて適切に使用してください。
+- 読者が引き込まれるような、プロフェッショナルかつ自然な文章を心がけてください。
+- 前置きや後書き（「以下に本文を記載します」など）は一切不要です。本文のみを出力してください。
+`;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-pro",
+      contents: prompt,
+      config: {
+        temperature: 0.7,
+      },
+    });
+    return response.text.trim();
+  } catch (error) {
+    console.error("Error generating article section:", error);
+    if (error instanceof Error) {
+      throw new Error(`記事セクション「${sectionTitle}」の生成中にエラーが発生しました: ${error.message}`);
+    }
+    throw new Error(`記事セクション「${sectionTitle}」の生成中に不明なエラーが発生しました。`);
+  }
+}
