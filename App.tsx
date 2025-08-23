@@ -1,7 +1,7 @@
 import React, { useState, useCallback, FormEvent, useEffect, useRef } from 'react';
 import { generateOutline, generateArticleSection } from './services/geminiService';
-import { getSavedOutlines, saveOutlines, getSavedArticles, saveArticles } from './services/storageService';
-import { OutlineData, OutlineSection, SavedOutline, SavedArticle, ArticleContentPart } from './types';
+import { getSavedOutlines, saveOutlines, getSavedArticles, saveArticles, getSavedMarkdowns, saveMarkdowns } from './services/storageService';
+import { OutlineData, OutlineSection, SavedOutline, SavedArticle, ArticleContentPart, SavedMarkdown } from './types';
 
 const SparklesIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
@@ -102,7 +102,12 @@ const OutlineEditor: React.FC<{
   );
 };
 
-const MarkdownOutput: React.FC<{ markdown: string }> = ({ markdown }) => {
+const MarkdownEditor: React.FC<{
+  markdown: string;
+  onMarkdownChange: (newMarkdown: string) => void;
+  onSave: () => void;
+  isEditing: boolean;
+}> = ({ markdown, onMarkdownChange, onSave, isEditing }) => {
   const [isCopied, setIsCopied] = useState(false);
 
   const handleCopy = () => {
@@ -113,19 +118,29 @@ const MarkdownOutput: React.FC<{ markdown: string }> = ({ markdown }) => {
   };
 
   return (
-    <div className="bg-slate-800/50 rounded-xl shadow-lg w-full relative">
+    <div className="bg-slate-800/50 rounded-xl shadow-lg w-full relative flex flex-col h-[70vh]">
       <div className="flex justify-between items-center p-4 border-b border-slate-700">
-        <h3 className="text-lg font-semibold text-slate-200">マークダウン出力</h3>
-        <button
-          onClick={handleCopy}
-          className="bg-slate-700 hover:bg-slate-600 text-slate-200 font-bold py-2 px-4 rounded-md text-sm transition-colors"
-        >
-          {isCopied ? 'コピーしました！' : 'コピー'}
-        </button>
+        <h3 className="text-lg font-semibold text-slate-200">マークダウン・エディタ</h3>
+        <div className="flex items-center gap-4">
+          <button
+            onClick={handleCopy}
+            className="bg-slate-700 hover:bg-slate-600 text-slate-200 font-bold py-2 px-4 rounded-md text-sm transition-colors"
+          >
+            {isCopied ? 'コピーしました！' : 'コピー'}
+          </button>
+          <button
+            onClick={onSave}
+            className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-md text-sm transition-colors"
+          >
+            {isEditing ? '更新' : '保存'}
+          </button>
+        </div>
       </div>
-      <pre className="p-4 text-slate-300 whitespace-pre-wrap break-words text-sm">
-        <code>{markdown}</code>
-      </pre>
+      <textarea
+        value={markdown}
+        onChange={(e) => onMarkdownChange(e.target.value)}
+        className="flex-grow p-4 bg-transparent text-slate-300 whitespace-pre-wrap break-words text-sm focus:outline-none w-full h-full resize-none"
+      />
     </div>
   );
 };
@@ -189,10 +204,13 @@ const App: React.FC = () => {
   const [generatedArticle, setGeneratedArticle] = useState<Map<string, string>>(new Map());
   const [savedArticles, setSavedArticles] = useState<SavedArticle[]>([]);
   const [editingArticleId, setEditingArticleId] = useState<string | null>(null);
+  const [savedMarkdowns, setSavedMarkdowns] = useState<SavedMarkdown[]>([]);
+  const [editingMarkdownId, setEditingMarkdownId] = useState<string | null>(null);
 
   useEffect(() => {
     setSavedOutlines(getSavedOutlines());
     setSavedArticles(getSavedArticles());
+    setSavedMarkdowns(getSavedMarkdowns());
   }, []);
 
   const handleSubmit = useCallback(async (event: FormEvent<HTMLFormElement>) => {
@@ -314,6 +332,10 @@ const App: React.FC = () => {
     setMarkdownOutput(md);
   };
 
+  const handleMarkdownChange = (newMarkdown: string) => {
+    setMarkdownOutput(newMarkdown);
+  };
+
   const handleGenerateArticleMarkdown = () => {
     if (!outline || generatedArticle.size === 0) return;
     const md = generateArticleMarkdown(outline, generatedArticle);
@@ -424,6 +446,61 @@ const App: React.FC = () => {
       const updatedArticles = savedArticles.filter(a => a.id !== id);
       setSavedArticles(updatedArticles);
       saveArticles(updatedArticles);
+    }
+  };
+
+  const handleSaveOrUpdateMarkdown = () => {
+    if (!markdownOutput.trim()) return;
+
+    // Extract title from the first line of markdown
+    const firstLine = markdownOutput.trim().split('\n')[0] || '無題のマークダウン';
+    const title = firstLine.replace(/^#+\s*/, '');
+
+    let updatedMarkdowns;
+    if (editingMarkdownId) {
+      // Update
+      updatedMarkdowns = savedMarkdowns.map(md =>
+        md.id === editingMarkdownId
+          ? { ...md, title: title, content: markdownOutput }
+          : md
+      );
+    } else {
+      // Save new
+      const newMarkdown: SavedMarkdown = {
+        id: Date.now().toString(),
+        createdAt: Date.now(),
+        title: title,
+        content: markdownOutput,
+      };
+      updatedMarkdowns = [newMarkdown, ...savedMarkdowns];
+    }
+
+    setSavedMarkdowns(updatedMarkdowns);
+    saveMarkdowns(updatedMarkdowns);
+
+    // Reset state
+    setEditingMarkdownId(null);
+    setMarkdownOutput('');
+  };
+
+  const handleEditMarkdown = (id: string) => {
+    const markdownToEdit = savedMarkdowns.find(md => md.id === id);
+    if (markdownToEdit) {
+      setMarkdownOutput(markdownToEdit.content);
+      setEditingMarkdownId(id);
+      // Clear other views
+      setOutline(null);
+      setGeneratedArticle(new Map());
+      setEditingId(null);
+      setEditingArticleId(null);
+    }
+  };
+
+  const handleDeleteMarkdown = (id: string) => {
+    if (window.confirm('本当にこのマークダウンを削除しますか？')) {
+      const updatedMarkdowns = savedMarkdowns.filter(md => md.id !== id);
+      setSavedMarkdowns(updatedMarkdowns);
+      saveMarkdowns(updatedMarkdowns);
     }
   };
 
@@ -581,6 +658,33 @@ const App: React.FC = () => {
               </div>
             </section>
           )}
+
+          {savedMarkdowns.length > 0 && !markdownOutput && !generatedArticle.size && (
+            <section className="w-full mt-12">
+              <h2 className="text-2xl font-bold text-slate-300 mb-6 text-center">保存済みマークダウン</h2>
+              <div className="space-y-4">
+                {savedMarkdowns.map((saved) => (
+                  <div key={saved.id} className="bg-slate-800/50 rounded-lg p-4 flex justify-between items-center transition-all hover:bg-slate-800">
+                    <span className="text-slate-200 font-medium">{saved.title}</span>
+                    <div className="flex items-center gap-4">
+                      <button
+                        onClick={() => handleEditMarkdown(saved.id)}
+                        className="text-sky-400 hover:text-sky-300 font-semibold"
+                      >
+                        編集
+                      </button>
+                      <button
+                        onClick={() => handleDeleteMarkdown(saved.id)}
+                        className="text-red-400 hover:text-red-300 font-semibold"
+                      >
+                        削除
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
             </div>
 
             {/* Right Column (Markdown Output) */}
@@ -596,7 +700,12 @@ const App: React.FC = () => {
                     editingArticleId={editingArticleId}
                   />
                 ) : markdownOutput ? (
-                  <MarkdownOutput markdown={markdownOutput} />
+                  <MarkdownEditor
+                    markdown={markdownOutput}
+                    onMarkdownChange={handleMarkdownChange}
+                    onSave={handleSaveOrUpdateMarkdown}
+                    isEditing={!!editingMarkdownId}
+                  />
                 ) : (
                   <div className="text-center text-slate-500 mt-16 p-6 border-2 border-dashed border-slate-700 rounded-xl">
                       <p>ここにマークダウンや生成された記事が表示されます。</p>
