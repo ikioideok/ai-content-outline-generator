@@ -25,3 +25,10 @@ export interface SavedArticle {
   outline: OutlineData;
   content: ArticleContentPart[];
 }
+
+export interface SavedMarkdown {
+  id: string;
+  createdAt: number;
+  title: string;
+  content: string;
+}
