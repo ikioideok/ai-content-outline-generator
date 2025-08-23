@@ -102,6 +102,34 @@ const OutlineEditor: React.FC<{
   );
 };
 
+const MarkdownOutput: React.FC<{ markdown: string }> = ({ markdown }) => {
+  const [isCopied, setIsCopied] = useState(false);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(markdown).then(() => {
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 2000);
+    });
+  };
+
+  return (
+    <div className="bg-slate-800/50 rounded-xl shadow-lg w-full relative">
+      <div className="flex justify-between items-center p-4 border-b border-slate-700">
+        <h3 className="text-lg font-semibold text-slate-200">マークダウン出力</h3>
+        <button
+          onClick={handleCopy}
+          className="bg-slate-700 hover:bg-slate-600 text-slate-200 font-bold py-2 px-4 rounded-md text-sm transition-colors"
+        >
+          {isCopied ? 'コピーしました！' : 'コピー'}
+        </button>
+      </div>
+      <pre className="p-4 text-slate-300 whitespace-pre-wrap break-words text-sm">
+        <code>{markdown}</code>
+      </pre>
+    </div>
+  );
+};
+
 
 const App: React.FC = () => {
   const [topic, setTopic] = useState<string>('');
@@ -112,6 +140,7 @@ const App: React.FC = () => {
   const intervalRef = useRef<number | null>(null);
   const [savedOutlines, setSavedOutlines] = useState<SavedOutline[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [markdownOutput, setMarkdownOutput] = useState<string>('');
 
   useEffect(() => {
     setSavedOutlines(getSavedOutlines());
@@ -215,11 +244,30 @@ const App: React.FC = () => {
     setEditingId(null);
     setOutline(null);
     setTopic('');
+    setMarkdownOutput('');
+  };
+
+  const generateMarkdown = (data: OutlineData): string => {
+    let md = `# ${data.title}\n\n`;
+    data.outline.forEach(item => {
+      md += `## ${item.section}\n\n`;
+      item.subsections.forEach(subsection => {
+        md += `- ${subsection}\n`;
+      });
+      md += '\n';
+    });
+    return md;
+  };
+
+  const handleGenerateMarkdown = () => {
+    if (!outline) return;
+    const md = generateMarkdown(outline);
+    setMarkdownOutput(md);
   };
 
   return (
     <div className="min-h-screen bg-slate-900 text-white flex flex-col items-center p-4 sm:p-6 font-sans">
-      <div className="w-full max-w-3xl mx-auto flex flex-col items-center">
+      <div className="w-full max-w-7xl mx-auto flex flex-col items-center">
         
         <header className="text-center my-8 md:my-12">
           <div className="inline-block bg-sky-500/10 p-3 rounded-full mb-4">
@@ -234,10 +282,14 @@ const App: React.FC = () => {
         </header>
 
         <main className="w-full">
-          <form onSubmit={handleSubmit} className="relative w-full">
-            <input
-              type="text"
-              value={topic}
+          <div className="flex flex-col md:flex-row gap-8 lg:gap-12">
+
+            {/* Left Column */}
+            <div className="flex-1 md:w-3/5">
+              <form onSubmit={handleSubmit} className="relative w-full">
+                <input
+                  type="text"
+                  value={topic}
               onChange={(e) => setTopic(e.target.value)}
               placeholder="例: 「効果的なリモートワークのコツ」"
               className="w-full p-4 pr-32 bg-slate-800 border-2 border-slate-700 rounded-full text-lg text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500 transition-all duration-300"
@@ -278,6 +330,12 @@ const App: React.FC = () => {
                         キャンセル
                       </button>
                   )}
+                   <button
+                    onClick={handleGenerateMarkdown}
+                    className="flex items-center justify-center bg-blue-600 text-white font-bold py-2 px-6 rounded-full hover:bg-blue-700 transition-colors"
+                  >
+                    マークダウン出力
+                  </button>
                   <button
                     onClick={handleSaveOrUpdate}
                     className="flex items-center justify-center bg-green-600 text-white font-bold py-2 px-6 rounded-full hover:bg-green-700 transition-colors"
@@ -320,6 +378,22 @@ const App: React.FC = () => {
               </div>
             </section>
           )}
+            </div>
+
+            {/* Right Column (Markdown Output) */}
+            <div className="flex-1 md:w-2/5">
+              <div className="sticky top-6">
+                {markdownOutput ? (
+                  <MarkdownOutput markdown={markdownOutput} />
+                ) : (
+                  <div className="text-center text-slate-500 mt-16 p-6 border-2 border-dashed border-slate-700 rounded-xl">
+                      <p>ここにマークダウン形式で出力されます。</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+          </div>
         </main>
         
         <footer className="text-center mt-12 mb-6">
