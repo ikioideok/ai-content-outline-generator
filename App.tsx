@@ -1,5 +1,5 @@
 import React, { useState, useCallback, FormEvent, useEffect, useRef } from 'react';
-import { generateOutline } from './services/geminiService';
+import { generateOutline, generateArticleSection } from './services/geminiService';
 import { getSavedOutlines, saveOutlines } from './services/storageService';
 import { OutlineData, OutlineSection, SavedOutline } from './types';
 
@@ -130,6 +130,27 @@ const MarkdownOutput: React.FC<{ markdown: string }> = ({ markdown }) => {
   );
 };
 
+const ArticleDisplay: React.FC<{
+  outline: OutlineData;
+  article: Map<string, string>;
+}> = ({ outline, article }) => {
+  return (
+    <div className="bg-slate-800/50 rounded-xl shadow-lg w-full p-6 md:p-8">
+      <h2 className="text-3xl font-bold text-sky-400 mb-6 border-b-2 border-slate-700 pb-4">{outline.title}</h2>
+      <div className="prose prose-invert prose-lg max-w-none">
+        {outline.outline.map((section, index) => (
+          <div key={index} className="mb-8">
+            <h3 className="text-2xl font-semibold text-slate-100">{section.section}</h3>
+            <div className="text-slate-300 whitespace-pre-wrap">
+              {article.get(section.section) || <span className="text-slate-500 italic">執筆中...</span>}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 
 const App: React.FC = () => {
   const [topic, setTopic] = useState<string>('');
@@ -141,6 +162,9 @@ const App: React.FC = () => {
   const [savedOutlines, setSavedOutlines] = useState<SavedOutline[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [markdownOutput, setMarkdownOutput] = useState<string>('');
+  const [isGeneratingArticle, setIsGeneratingArticle] = useState<boolean>(false);
+  const [currentGeneratingSection, setCurrentGeneratingSection] = useState<string>('');
+  const [generatedArticle, setGeneratedArticle] = useState<Map<string, string>>(new Map());
 
   useEffect(() => {
     setSavedOutlines(getSavedOutlines());
@@ -265,6 +289,36 @@ const App: React.FC = () => {
     setMarkdownOutput(md);
   };
 
+  const handleGenerateArticle = async () => {
+    if (!outline) return;
+
+    setIsGeneratingArticle(true);
+    setMarkdownOutput('');
+    setGeneratedArticle(new Map());
+    setError(null);
+
+    try {
+      for (const section of outline.outline) {
+        setCurrentGeneratingSection(section.section);
+        const sectionText = await generateArticleSection(
+          outline.title,
+          section.section,
+          section.subsections
+        );
+        setGeneratedArticle(prev => new Map(prev).set(section.section, sectionText));
+      }
+    } catch (err) {
+       if (err instanceof Error) {
+          setError(err.message);
+      } else {
+          setError('記事の生成中に不明なエラーが発生しました。');
+      }
+    } finally {
+      setIsGeneratingArticle(false);
+      setCurrentGeneratingSection('');
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-900 text-white flex flex-col items-center p-4 sm:p-6 font-sans">
       <div className="w-full max-w-7xl mx-auto flex flex-col items-center">
@@ -332,17 +386,31 @@ const App: React.FC = () => {
                   )}
                    <button
                     onClick={handleGenerateMarkdown}
-                    className="flex items-center justify-center bg-blue-600 text-white font-bold py-2 px-6 rounded-full hover:bg-blue-700 transition-colors"
+                    disabled={isGeneratingArticle}
+                    className="flex items-center justify-center bg-blue-600 text-white font-bold py-2 px-6 rounded-full hover:bg-blue-700 transition-colors disabled:bg-slate-600"
                   >
                     マークダウン出力
                   </button>
+                   <button
+                    onClick={handleGenerateArticle}
+                    disabled={isGeneratingArticle}
+                    className="flex items-center justify-center bg-purple-600 text-white font-bold py-2 px-6 rounded-full hover:bg-purple-700 transition-colors disabled:bg-slate-600"
+                  >
+                    記事を生成
+                  </button>
                   <button
                     onClick={handleSaveOrUpdate}
-                    className="flex items-center justify-center bg-green-600 text-white font-bold py-2 px-6 rounded-full hover:bg-green-700 transition-colors"
+                    disabled={isGeneratingArticle}
+                    className="flex items-center justify-center bg-green-600 text-white font-bold py-2 px-6 rounded-full hover:bg-green-700 transition-colors disabled:bg-slate-600"
                   >
                     {editingId ? '更新を保存' : 'リストに保存'}
                   </button>
                 </div>
+                {isGeneratingArticle && (
+                   <div className="mt-4 text-center text-purple-400 animate-pulse">
+                     <p>記事を生成中... (現在: {currentGeneratingSection})</p>
+                   </div>
+                )}
               </>
             )}
             {!isLoading && !error && !outline && (
@@ -383,11 +451,13 @@ const App: React.FC = () => {
             {/* Right Column (Markdown Output) */}
             <div className="flex-1 md:w-2/5">
               <div className="sticky top-6">
-                {markdownOutput ? (
+                {generatedArticle.size > 0 && outline ? (
+                  <ArticleDisplay outline={outline} article={generatedArticle} />
+                ) : markdownOutput ? (
                   <MarkdownOutput markdown={markdownOutput} />
                 ) : (
                   <div className="text-center text-slate-500 mt-16 p-6 border-2 border-dashed border-slate-700 rounded-xl">
-                      <p>ここにマークダウン形式で出力されます。</p>
+                      <p>ここにマークダウンや生成された記事が表示されます。</p>
                   </div>
                 )}
               </div>
