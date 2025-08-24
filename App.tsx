@@ -213,6 +213,24 @@ const App: React.FC = () => {
     setSavedMarkdowns(getSavedMarkdowns());
   }, []);
 
+  const handleResetApp = () => {
+    setTopic('');
+    setOutline(null);
+    setIsLoading(false);
+    setError(null);
+    setLoadingMessage('');
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+    }
+    setEditingId(null);
+    setMarkdownOutput('');
+    setIsGeneratingArticle(false);
+    setCurrentGeneratingSection('');
+    setGeneratedArticle(new Map());
+    setEditingArticleId(null);
+    setEditingMarkdownId(null);
+  };
+
   const handleSubmit = useCallback(async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!topic.trim() || isLoading) return;
@@ -512,8 +530,10 @@ const App: React.FC = () => {
           <div className="inline-block bg-sky-500/10 p-3 rounded-full mb-4">
              <SparklesIcon className="w-8 h-8 text-sky-400" />
           </div>
-          <h1 className="text-4xl sm:text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-sky-400 to-cyan-300">
-            AI 構成案ジェネレーター
+          <h1
+            onClick={handleResetApp}
+            className="text-4xl sm:text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-sky-400 to-cyan-300 cursor-pointer transition-opacity hover:opacity-80">
+            AI記事制作ツール
           </h1>
           <p className="mt-4 text-lg text-slate-400">
             タイトルやキーワードを入力するだけで、SEOに強い構成案を瞬時に作成します。
