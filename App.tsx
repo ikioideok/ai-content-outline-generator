@@ -206,6 +206,7 @@ const App: React.FC = () => {
   const [editingArticleId, setEditingArticleId] = useState<string | null>(null);
   const [savedMarkdowns, setSavedMarkdowns] = useState<SavedMarkdown[]>([]);
   const [editingMarkdownId, setEditingMarkdownId] = useState<string | null>(null);
+  const [isPowerUpMode, setIsPowerUpMode] = useState<boolean>(false);
 
   useEffect(() => {
     setSavedOutlines(getSavedOutlines());
@@ -523,7 +524,7 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-900 text-white flex flex-col items-center p-4 sm:p-6 font-sans">
+    <div className={`min-h-screen ${isPowerUpMode ? 'bg-indigo-900' : 'bg-slate-900'} text-white flex flex-col items-center p-4 sm:p-6 font-sans transition-colors duration-500`}>
       <div className="w-full max-w-7xl mx-auto flex flex-col items-center">
         
         <header className="text-center my-8 md:my-12">
@@ -536,8 +537,25 @@ const App: React.FC = () => {
             AI記事制作ツール
           </h1>
           <p className="mt-4 text-lg text-slate-400">
-            タイトルやキーワードを入力するだけで、SEOに強い構成案を瞬時に作成します。
+            {isPowerUpMode
+              ? '新機能を搭載したパワーアップ版です。'
+              : 'タイトルやキーワードを入力するだけで、SEOに強い構成案を瞬時に作成します。'}
           </p>
+          <div className="mt-6 flex justify-center items-center">
+            <span className={`mr-3 text-sm font-medium ${!isPowerUpMode ? 'text-white' : 'text-slate-400'}`}>通常版</span>
+            <label htmlFor="powerUpToggle" className="inline-flex relative items-center cursor-pointer">
+              <input
+                type="checkbox"
+                id="powerUpToggle"
+                className="sr-only peer"
+                checked={isPowerUpMode}
+                onChange={() => setIsPowerUpMode(!isPowerUpMode)}
+              />
+              <div className="w-11 h-6 bg-slate-700 rounded-full peer peer-focus:ring-4 peer-focus:ring-sky-800 peer-checked:bg-sky-600"></div>
+              <div className="absolute top-0.5 left-[2px] bg-white border-gray-300 border rounded-full h-5 w-5 transition-all peer-checked:translate-x-full peer-checked:border-white"></div>
+            </label>
+            <span className={`ml-3 text-sm font-medium ${isPowerUpMode ? 'text-sky-400' : 'text-slate-400'}`}>パワーアップ版</span>
+          </div>
         </header>
 
         <main className="w-full">
