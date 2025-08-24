@@ -1,5 +1,6 @@
 import React, { useState, useCallback, FormEvent, useEffect, useRef } from 'react';
-import { generateOutline, generateArticleSection } from './services/geminiService';
+import * as geminiService from './services/geminiService';
+import * as openAiService from './services/openAiService';
 import { getSavedOutlines, saveOutlines, getSavedArticles, saveArticles, getSavedMarkdowns, saveMarkdowns } from './services/storageService';
 import { OutlineData, OutlineSection, SavedOutline, SavedArticle, ArticleContentPart, SavedMarkdown } from './types';
 
@@ -207,6 +208,7 @@ const App: React.FC = () => {
   const [savedMarkdowns, setSavedMarkdowns] = useState<SavedMarkdown[]>([]);
   const [editingMarkdownId, setEditingMarkdownId] = useState<string | null>(null);
   const [isPowerUpMode, setIsPowerUpMode] = useState<boolean>(false);
+  const [selectedModel, setSelectedModel] = useState<'gemini' | 'openai'>('gemini');
 
   useEffect(() => {
     setSavedOutlines(getSavedOutlines());
@@ -258,7 +260,12 @@ const App: React.FC = () => {
     }, 3500);
 
     try {
-      const result = await generateOutline(topic);
+      let result;
+      if (isPowerUpMode && selectedModel === 'openai') {
+        result = await openAiService.generateOutline(topic);
+      } else {
+        result = await geminiService.generateOutline(topic);
+      }
       setOutline(result);
     } catch (err) {
       if (err instanceof Error) {
@@ -391,11 +398,20 @@ const App: React.FC = () => {
     try {
       for (const section of outline.outline) {
         setCurrentGeneratingSection(section.section);
-        const sectionText = await generateArticleSection(
-          outline.title,
-          section.section,
-          section.subsections
-        );
+        let sectionText;
+        if (isPowerUpMode && selectedModel === 'openai') {
+            sectionText = await openAiService.generateArticleSection(
+                outline.title,
+                section.section,
+                section.subsections
+            );
+        } else {
+            sectionText = await geminiService.generateArticleSection(
+                outline.title,
+                section.section,
+                section.subsections
+            );
+        }
         setGeneratedArticle(prev => new Map(prev).set(section.section, sectionText));
       }
     } catch (err) {
@@ -556,6 +572,26 @@ const App: React.FC = () => {
             </label>
             <span className={`ml-3 text-sm font-medium ${isPowerUpMode ? 'text-sky-400' : 'text-slate-400'}`}>パワーアップ版</span>
           </div>
+          {isPowerUpMode && (
+            <div className="mt-4">
+              <div className="inline-flex rounded-md shadow-sm" role="group">
+                <button
+                  type="button"
+                  onClick={() => setSelectedModel('gemini')}
+                  className={`px-4 py-2 text-sm font-medium rounded-l-lg border transition-colors ${selectedModel === 'gemini' ? 'bg-sky-600 border-sky-600 text-white' : 'bg-slate-700 border-slate-600 text-slate-300 hover:bg-slate-600'}`}
+                >
+                  Gemini
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedModel('openai')}
+                  className={`px-4 py-2 text-sm font-medium rounded-r-lg border-t border-b border-r transition-colors ${selectedModel === 'openai' ? 'bg-sky-600 border-sky-600 text-white' : 'bg-slate-700 border-slate-600 text-slate-300 hover:bg-slate-600'}`}
+                >
+                  ChatGPT (gpt-5)
+                </button>
+              </div>
+            </div>
+          )}
         </header>
 
         <main className="w-full">
