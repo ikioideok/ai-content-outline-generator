@@ -54,6 +54,50 @@ app.post('/api/openai', async (req, res) => {
   }
 });
 
+// API endpoint for streaming responses
+app.post('/api/openai-stream', async (req, res) => {
+  if (!process.env.OPENAI_API_KEY) {
+    // Cannot send a JSON error here as the client expects a stream.
+    // The error will be handled on the client side by the connection closing.
+    console.error('OPENAI_API_KEY is not set for streaming endpoint.');
+    return res.status(500).end('Server configuration error.');
+  }
+
+  const { prompt, model } = req.body;
+
+  if (!prompt || !model) {
+    return res.status(400).end('Prompt and model are required.');
+  }
+
+  try {
+    const stream = await openai.chat.completions.create({
+      messages: [{ role: 'user', content: prompt }],
+      model: model,
+      stream: true,
+    });
+
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+
+    for await (const chunk of stream) {
+      const content = chunk.choices[0]?.delta?.content || '';
+      if (content) {
+        res.write(content);
+      }
+    }
+
+    res.end();
+  } catch (error) {
+    console.error('Error calling OpenAI streaming API:', error.message);
+    // The connection will likely be closed by the time we get here.
+    // We try to end the response gracefully if it's still open.
+    if (!res.headersSent) {
+      res.status(500).end('Failed to call OpenAI API.');
+    } else {
+      res.end();
+    }
+  }
+});
+
 // Serve static files from the React app build directory
 // This should be the directory where `npm run build` places the output.
 app.use(express.static(path.join(__dirname, 'dist')));

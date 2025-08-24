@@ -1,6 +1,6 @@
 import { OutlineData } from '../types';
 
-// This function calls our own backend, which then calls OpenAI
+// This function calls our own backend, which then calls OpenAI (non-streaming)
 export const generateOutline = async (topic: string): Promise<OutlineData> => {
   // A more robust prompt asking for JSON output
   const prompt = `以下のトピックに関するブログ記事の構成案を生成してください。
@@ -27,7 +27,7 @@ export const generateOutline = async (topic: string): Promise<OutlineData> => {
     },
     body: JSON.stringify({
       prompt: prompt,
-      model: 'gpt-5', // The backend will validate this
+      model: 'gpt-5',
     }),
   });
 
@@ -40,7 +40,6 @@ export const generateOutline = async (topic: string): Promise<OutlineData> => {
   const content = data.content;
 
   try {
-    // The content from the LLM is expected to be a JSON string.
     return JSON.parse(content);
   } catch (e) {
     console.error("Failed to parse JSON response from OpenAI:", content);
@@ -48,11 +47,13 @@ export const generateOutline = async (topic: string): Promise<OutlineData> => {
   }
 };
 
-export const generateArticleSection = async (
+// This function handles the streaming response for article generation
+export const generateArticleSectionStream = async (
   articleTitle: string,
   sectionTitle: string,
-  subsections: string[]
-): Promise<string> => {
+  subsections: string[],
+  onChunk: (chunk: string) => void
+): Promise<void> => {
     const prompt = `以下のブログ記事のセクション本文を執筆してください。
 
 記事タイトル: ${articleTitle}
@@ -61,7 +62,7 @@ export const generateArticleSection = async (
 
 上記の指示に基づいて、セクションの本文を日本語で生成してください。余計な前置きや後書きは不要です。本文のみを出力してください。`;
 
-    const response = await fetch('/api/openai', {
+    const response = await fetch('/api/openai-stream', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -73,10 +74,23 @@ export const generateArticleSection = async (
     });
 
     if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.details || 'OpenAI APIからの応答エラー');
+        const errorText = await response.text();
+        throw new Error(errorText || 'OpenAIストリーミングAPIからの応答エラー');
     }
 
-    const data = await response.json();
-    return data.content;
+    if (!response.body) {
+        throw new Error("ストリーミング応答のボディがありません。");
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+            break;
+        }
+        const chunk = decoder.decode(value, { stream: true });
+        onChunk(chunk);
+    }
 };
