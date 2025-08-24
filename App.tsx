@@ -398,21 +398,29 @@ const App: React.FC = () => {
     try {
       for (const section of outline.outline) {
         setCurrentGeneratingSection(section.section);
-        let sectionText;
+
         if (isPowerUpMode && selectedModel === 'openai') {
-            sectionText = await openAiService.generateArticleSection(
+            const onChunk = (chunk: string) => {
+                setGeneratedArticle(prev => {
+                    const currentContent = prev.get(section.section) || '';
+                    const newContent = currentContent + chunk;
+                    return new Map(prev).set(section.section, newContent);
+                });
+            };
+            await openAiService.generateArticleSectionStream(
                 outline.title,
                 section.section,
-                section.subsections
+                section.subsections,
+                onChunk
             );
         } else {
-            sectionText = await geminiService.generateArticleSection(
+            const sectionText = await geminiService.generateArticleSection(
                 outline.title,
                 section.section,
                 section.subsections
             );
+            setGeneratedArticle(prev => new Map(prev).set(section.section, sectionText));
         }
-        setGeneratedArticle(prev => new Map(prev).set(section.section, sectionText));
       }
     } catch (err) {
        if (err instanceof Error) {
